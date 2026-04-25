@@ -1,4 +1,6 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import type { Session, User } from "@supabase/supabase-js";
 
 export type AccountType = "tourist" | "partner";
 
@@ -7,89 +9,154 @@ export type Account = {
   email: string;
   name: string;
   initials: string;
-  /** Tourist: home country. Partner: business name */
   detail: string;
-};
-
-const DEMO_ACCOUNTS: Record<string, { password: string; account: Account }> = {
-  "hans@example.com": {
-    password: "alpine",
-    account: {
-      type: "tourist",
-      email: "hans@example.com",
-      name: "Hans Keller",
-      initials: "HK",
-      detail: "Berlin, Germany",
-    },
-  },
-  "marco@fonduehouse.ch": {
-    password: "fondue",
-    account: {
-      type: "partner",
-      email: "marco@fonduehouse.ch",
-      name: "Marco Bianchi",
-      initials: "MB",
-      detail: "Alpine Fondue House · Interlaken",
-    },
-  },
+  userId: string;
 };
 
 type AuthState = {
   account: Account | null;
-  login: (email: string, password: string) => { ok: true; type: AccountType } | { ok: false; error: string };
-  loginAs: (type: AccountType) => Account;
-  logout: () => void;
+  loading: boolean;
+  signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string; type?: AccountType }>;
+  signUpTourist: (args: { email: string; password: string; name: string; country: string }) => Promise<{ ok: boolean; error?: string }>;
+  signUpPartner: (args: { email: string; password: string; name: string; claimAlpine?: boolean; businessName?: string; category?: string; location?: string }) => Promise<{ ok: boolean; error?: string }>;
+  signOut: () => Promise<void>;
 };
 
 const Ctx = createContext<AuthState | null>(null);
-const STORAGE_KEY = "jf_wallet_account";
+
+const ALPINE_FONDUE_ID = "11111111-1111-1111-1111-111111111111";
+
+function initialsOf(name: string) {
+  return name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((s) => s[0]?.toUpperCase() ?? "")
+    .join("") || "??";
+}
+
+async function loadAccount(user: User): Promise<Account | null> {
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("display_name, role, home_country")
+    .eq("id", user.id)
+    .maybeSingle();
+  if (error || !profile) return null;
+
+  let detail = profile.home_country ?? "";
+  if (profile.role === "partner") {
+    const { data: partner } = await supabase
+      .from("partners")
+      .select("name, location")
+      .eq("owner_id", user.id)
+      .maybeSingle();
+    if (partner) detail = `${partner.name}${partner.location ? " · " + partner.location : ""}`;
+    else detail = "No business linked yet";
+  }
+
+  return {
+    type: profile.role as AccountType,
+    email: user.email ?? "",
+    name: profile.display_name,
+    initials: initialsOf(profile.display_name),
+    detail,
+    userId: user.id,
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Hydrate from localStorage (client only — SSR safe via effect)
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setAccount(JSON.parse(raw));
-    } catch {
-      /* ignore */
+    // Listener first
+    const { data: sub } = supabase.auth.onAuthStateChange((_evt, session) => {
+      // Defer DB call to avoid blocking the listener
+      if (session?.user) {
+        setTimeout(() => {
+          loadAccount(session.user).then(setAccount);
+        }, 0);
+      } else {
+        setAccount(null);
+      }
+    });
+
+    // Then check existing session
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session?.user) {
+        const acc = await loadAccount(data.session.user);
+        setAccount(acc);
+      }
+      setLoading(false);
+    });
+
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const signIn: AuthState["signIn"] = useCallback(async (email, password) => {
+    const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    if (error) return { ok: false, error: error.message };
+    const acc = data.user ? await loadAccount(data.user) : null;
+    if (acc) setAccount(acc);
+    return { ok: true, type: acc?.type };
+  }, []);
+
+  const signUpTourist: AuthState["signUpTourist"] = useCallback(async ({ email, password, name, country }) => {
+    const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+    const { error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        data: { display_name: name, role: "tourist", home_country: country },
+        emailRedirectTo: redirectTo,
+      },
+    });
+    if (error) return { ok: false, error: error.message };
+    return { ok: true };
+  }, []);
+
+  const signUpPartner: AuthState["signUpPartner"] = useCallback(async ({ email, password, name, claimAlpine, businessName, category, location }) => {
+    const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+    const { data, error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
+      options: {
+        data: { display_name: name, role: "partner" },
+        emailRedirectTo: redirectTo,
+      },
+    });
+    if (error) return { ok: false, error: error.message };
+
+    // If session is immediately available (auto-confirm enabled), claim/create partner
+    const session = (await supabase.auth.getSession()).data.session;
+    if (session?.user) {
+      if (claimAlpine) {
+        // Best effort claim via edge function so it works even with RLS update restriction.
+        await supabase.functions.invoke("claim-partner", { body: { partnerId: ALPINE_FONDUE_ID } });
+      } else if (businessName) {
+        await supabase.from("partners").insert({
+          owner_id: session.user.id,
+          name: businessName,
+          category: category ?? "Other",
+          location: location ?? null,
+        });
+      }
+      const acc = await loadAccount(session.user);
+      setAccount(acc);
     }
+    return { ok: true };
   }, []);
 
-  const persist = (a: Account | null) => {
-    try {
-      if (a) localStorage.setItem(STORAGE_KEY, JSON.stringify(a));
-      else localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      /* ignore */
-    }
-  };
-
-  const login: AuthState["login"] = useCallback((email, password) => {
-    const entry = DEMO_ACCOUNTS[email.toLowerCase().trim()];
-    if (!entry) return { ok: false, error: "No account with this email." };
-    if (entry.password !== password) return { ok: false, error: "Wrong password." };
-    setAccount(entry.account);
-    persist(entry.account);
-    return { ok: true, type: entry.account.type };
-  }, []);
-
-  const loginAs = useCallback((type: AccountType) => {
-    const acc = type === "tourist"
-      ? DEMO_ACCOUNTS["hans@example.com"].account
-      : DEMO_ACCOUNTS["marco@fonduehouse.ch"].account;
-    setAccount(acc);
-    persist(acc);
-    return acc;
-  }, []);
-
-  const logout = useCallback(() => {
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
     setAccount(null);
-    persist(null);
   }, []);
 
-  return <Ctx.Provider value={{ account, login, loginAs, logout }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ account, loading, signIn, signUpTourist, signUpPartner, signOut }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export function useAuth() {
@@ -98,7 +165,4 @@ export function useAuth() {
   return v;
 }
 
-export const DEMO_CREDENTIALS = [
-  { type: "tourist" as const, email: "hans@example.com", password: "alpine", label: "Tourist · Hans Keller" },
-  { type: "partner" as const, email: "marco@fonduehouse.ch", password: "fondue", label: "Partner · Alpine Fondue House" },
-];
+export const ALPINE_FONDUE_PARTNER_ID = ALPINE_FONDUE_ID;
