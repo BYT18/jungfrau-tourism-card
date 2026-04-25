@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageShell, SectionTitle, Stat } from "@/components/brand";
+import { RequireAuth } from "@/components/require-auth";
 import { Toast, useToast, QRBlock } from "@/components/wallet-ui";
 import { useWallet, fmtCHF } from "@/lib/wallet-store";
+import { useAuth } from "@/lib/auth-store";
 import fondueImg from "@/assets/fondue.jpg";
 
 export const Route = createFileRoute("/partner")({
@@ -22,7 +24,11 @@ export const Route = createFileRoute("/partner")({
       },
     ],
   }),
-  component: PartnerDashboard,
+  component: () => (
+    <RequireAuth type="partner">
+      <PartnerDashboard />
+    </RequireAuth>
+  ),
 });
 
 type Tab = "overview" | "offers" | "bookings" | "scan" | "settle";
