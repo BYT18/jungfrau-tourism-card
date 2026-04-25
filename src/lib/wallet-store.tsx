@@ -311,13 +311,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     discount?: number; icon?: string; bookingId?: string;
   }) => {
     const { error } = await supabase.rpc("wallet_spend", {
-      p_partner_id: args.partnerId,
+      p_partner_id: args.partnerId as any,
       p_partner_name: args.partnerName,
       p_category: args.category,
       p_amount: args.amount,
-      p_discount: args.discount ?? null,
-      p_icon: args.icon ?? null,
-      p_booking_id: args.bookingId ?? null,
+      p_discount: (args.discount ?? null) as any,
+      p_icon: (args.icon ?? null) as any,
+      p_booking_id: (args.bookingId ?? null) as any,
     });
     if (error) throw error;
   }, []);
