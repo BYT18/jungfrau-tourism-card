@@ -37,7 +37,7 @@ export const Route = createRootRoute({
           "Pay, book, redeem benefits and collect rewards across the Jungfrau Region with one digital guest wallet.",
       },
       { name: "author", content: "Jungfrau Pass Wallet" },
-      { property: "og:title", content: "Jungfrau Pass Wallet" },
+      { property: "og:title", content: "Jungfrau Pass Wallet — One wallet for the Jungfrau Region" },
       {
         property: "og:description",
         content:
@@ -45,6 +45,12 @@ export const Route = createRootRoute({
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Jungfrau Pass Wallet — One wallet for the Jungfrau Region" },
+      { name: "description", content: "A digital guest wallet for payments, benefits, bookings, tickets, and local rewards in the Jungfrau Region." },
+      { property: "og:description", content: "A digital guest wallet for payments, benefits, bookings, tickets, and local rewards in the Jungfrau Region." },
+      { name: "twitter:description", content: "A digital guest wallet for payments, benefits, bookings, tickets, and local rewards in the Jungfrau Region." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/15554a1f-27d2-4f6e-a783-b27873135f0c/id-preview-0e2e2f56--67b3906a-d8a2-452c-a553-37a099003fa4.lovable.app-1777106985750.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/15554a1f-27d2-4f6e-a783-b27873135f0c/id-preview-0e2e2f56--67b3906a-d8a2-452c-a553-37a099003fa4.lovable.app-1777106985750.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
