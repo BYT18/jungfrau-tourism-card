@@ -187,16 +187,15 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       // Tourist data: wallet + own transactions + own bookings
       if (!isPartner) {
         const [{ data: w }, { data: txs }, { data: bks }, { data: offs }] = await Promise.all([
-          supabase.from("wallets").select("balance, topped_up").eq("user_id", userId).maybeSingle(),
-          supabase.from("transactions").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
-          supabase.from("bookings").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+          supabase.from("wallets").select("balance, topped_up").eq("user_id", uid).maybeSingle(),
+          supabase.from("transactions").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
+          supabase.from("bookings").select("*").eq("user_id", uid).order("created_at", { ascending: false }),
           supabase.from("offers").select("id, partner_id, title, discount, valid_time, category, active, redemptions, views").eq("active", true),
         ]);
         if (cancelled) return;
         if (w) { setBalance(Number(w.balance)); setToppedUp(Number(w.topped_up)); }
         setTransactions((txs ?? []).map(mapTx));
         setBookings((bks ?? []).map(mapBooking));
-        // Load partner names for offers
         const partnerIds = Array.from(new Set((offs ?? []).map((o) => o.partner_id)));
         const { data: parts } = partnerIds.length
           ? await supabase.from("partners").select("id, name").in("id", partnerIds)
@@ -204,9 +203,8 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         const nameMap = new Map((parts ?? []).map((p) => [p.id, p.name]));
         setOffers((offs ?? []).map((o) => mapOffer(o, nameMap.get(o.partner_id) ?? "Partner")));
       } else {
-        // Partner data: my partner row + my offers + bookings at my partner
         const { data: myPartner } = await supabase
-          .from("partners").select("id, name").eq("owner_id", userId).maybeSingle();
+          .from("partners").select("id, name").eq("owner_id", uid).maybeSingle();
         if (cancelled) return;
         if (myPartner) {
           setPartnerId(myPartner.id);
@@ -226,21 +224,21 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     load();
 
     // Realtime
-    const channels = [];
+    const channels: ReturnType<typeof supabase.channel>[] = [];
     if (!isPartner) {
       const ch = supabase
-        .channel(`wallet-${userId}`)
-        .on("postgres_changes", { event: "*", schema: "public", table: "wallets", filter: `user_id=eq.${userId}` }, (p) => {
+        .channel(`wallet-${uid}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "wallets", filter: `user_id=eq.${uid}` }, (p) => {
           const row = p.new as { balance: number; topped_up: number } | undefined;
           if (row) { setBalance(Number(row.balance)); setToppedUp(Number(row.topped_up)); }
         })
-        .on("postgres_changes", { event: "*", schema: "public", table: "transactions", filter: `user_id=eq.${userId}` }, () => load())
-        .on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: `user_id=eq.${userId}` }, () => load())
+        .on("postgres_changes", { event: "*", schema: "public", table: "transactions", filter: `user_id=eq.${uid}` }, () => load())
+        .on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: `user_id=eq.${uid}` }, () => load())
         .subscribe();
       channels.push(ch);
     } else {
       const ch = supabase
-        .channel(`partner-${userId}`)
+        .channel(`partner-${uid}`)
         .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => load())
         .on("postgres_changes", { event: "*", schema: "public", table: "offers" }, () => load())
         .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => load())
