@@ -35,6 +35,33 @@ function LoginPage() {
 
   const goByType = (t: AccountType) => navigate({ to: t === "tourist" ? "/tourist" : "/partner" });
 
+  const demoSignIn = async (kind: "tourist" | "partner") => {
+    setError(null); setInfo(null); setBusy(true);
+    try {
+      const demoEmail = kind === "tourist" ? "demo.tourist@jungfrau.app" : "demo.partner@jungfrau.app";
+      const demoPassword = "demo1234";
+      const demoName = kind === "tourist" ? "Hans Keller" : "Marco Bianchi";
+
+      // Try sign in first
+      let res = await signIn(demoEmail, demoPassword);
+      if (!res.ok) {
+        // Create the account on the fly
+        if (kind === "tourist") {
+          const up = await signUpTourist({ email: demoEmail, password: demoPassword, name: demoName, country: "Germany" });
+          if (!up.ok) { setError(up.error ?? "Demo signup failed."); return; }
+        } else {
+          const up = await signUpPartner({ email: demoEmail, password: demoPassword, name: demoName, claimAlpine: true });
+          if (!up.ok) { setError(up.error ?? "Demo signup failed."); return; }
+        }
+        res = await signIn(demoEmail, demoPassword);
+        if (!res.ok) { setError(res.error ?? "Could not sign in to demo account."); return; }
+      }
+      goByType(kind);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -130,6 +157,34 @@ function LoginPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Demo quick sign-in */}
+          <div className="mt-5 rounded-xl border border-dashed border-teal/40 bg-teal/5 p-3">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-teal font-bold mb-2">
+              ⚡ One-click demo
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => demoSignIn("tourist")}
+                disabled={busy}
+                className="px-3 py-2 rounded-md bg-white border border-border text-xs font-semibold text-charcoal hover:border-primary hover:text-primary transition disabled:opacity-60"
+              >
+                🏔️ Demo tourist
+              </button>
+              <button
+                type="button"
+                onClick={() => demoSignIn("partner")}
+                disabled={busy}
+                className="px-3 py-2 rounded-md bg-white border border-border text-xs font-semibold text-charcoal hover:border-primary hover:text-primary transition disabled:opacity-60"
+              >
+                🍽️ Demo partner
+              </button>
+            </div>
+            <p className="mt-2 text-[10px] text-muted-foreground leading-relaxed">
+              Instantly signs you in. Creates the account on first click — no email confirmation needed.
+            </p>
           </div>
 
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
