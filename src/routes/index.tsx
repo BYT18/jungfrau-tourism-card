@@ -186,19 +186,19 @@ function Home() {
         <div className="mt-10 grid md:grid-cols-3 gap-6">
           {[
             {
-              to: "/tourist",
+              to: touristHref,
               tag: "Tourist",
               title: "Hans Keller",
               desc: "Spontaneous traveler discovers the region, tops up CHF 1,000, gets his digital guest card and books his trip — all from one app.",
-              cta: "Open tourist app",
+              cta: account?.type === "tourist" ? "Open tourist app" : "Sign in as tourist",
               accent: "from-primary to-teal",
             },
             {
-              to: "/partner",
+              to: partnerHref,
               tag: "Partner",
               title: "Alpine Fondue House",
               desc: "Restaurant fills its 18:00–19:00 quiet hour with a targeted offer, scans guest QR, validates eligibility automatically.",
-              cta: "Open partner dashboard",
+              cta: account?.type === "partner" ? "Open partner dashboard" : "Sign in as partner",
               accent: "from-teal to-emerald",
             },
             {
