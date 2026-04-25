@@ -181,6 +181,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false;
     setLoading(true);
+    const uid = userId;
 
     async function load() {
       // Tourist data: wallet + own transactions + own bookings
