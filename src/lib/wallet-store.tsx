@@ -1,10 +1,13 @@
 import {
   createContext,
   useContext,
+  useEffect,
   useState,
   useCallback,
   type ReactNode,
 } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth, ALPINE_FONDUE_PARTNER_ID } from "@/lib/auth-store";
 
 /* ----------------------------- Types ----------------------------- */
 
@@ -12,7 +15,7 @@ export type Transaction = {
   id: string;
   partner: string;
   category: "Hotel" | "Restaurant" | "Activity" | "Transport" | "Top-up" | "Souvenir";
-  amount: number; // negative = spent, positive = top-up
+  amount: number;
   discount?: number;
   time: string;
   icon: string;
@@ -79,342 +82,372 @@ type WalletState = {
   balance: number;
   toppedUp: number;
 
-  // History & data
+  // Data (live)
   transactions: Transaction[];
   bookings: Booking[];
   offers: Offer[];
   achievements: Achievement[];
   tickets: Ticket[];
 
-  // Demo flow tracking
   scenesCompleted: Record<string, boolean>;
+  loading: boolean;
 };
 
 type WalletActions = {
-  topUp: (amount: number) => void;
-  payHotel: () => void;
-  bookFondue: () => void;
-  redeemFondue: () => void;
-  bookTripBuilder: () => void;
-  payEigerExpress: () => void;
+  topUp: (amount: number) => Promise<void>;
+  payHotel: () => Promise<void>;
+  bookFondue: () => Promise<void>;
+  redeemFondue: () => Promise<void>;
+  bookTripBuilder: () => Promise<void>;
+  payEigerExpress: () => Promise<void>;
   unlockReward: () => void;
   resetDemo: () => void;
   markScene: (scene: string) => void;
-  toggleOffer: (id: string) => void;
-  createOffer: (offer: Omit<Offer, "id" | "redemptions" | "views" | "active" | "partnerId" | "partner">) => void;
+  toggleOffer: (id: string) => Promise<void>;
+  createOffer: (offer: {
+    title: string;
+    discount: number;
+    validTime: string;
+    category: string;
+    redemptionType: "single_use" | "multi_use";
+    excludes?: string[];
+  }) => Promise<void>;
+  /** Partner: confirm a guest booking by ID (charges wallet, marks redeemed) */
+  partnerConfirmBooking: (bookingId: string) => Promise<{ ok: boolean; error?: string }>;
 };
 
-/* ----------------------------- Initial state ----------------------------- */
+/* ----------------------------- Helpers ----------------------------- */
 
-const initial: WalletState = {
-  guestName: "Hans Keller",
-  guestStatus: "inactive",
-  homeCountry: "Germany",
-  balance: 0,
-  toppedUp: 0,
-  transactions: [],
-  bookings: [
-    {
-      id: "bk_001",
-      guestName: "Sofia Romano",
-      partnerId: "p_fondue",
-      partner: "Alpine Fondue House",
-      offerId: "off_fondue_20",
-      offerTitle: "20% off fondue · early evening",
-      time: "18:15",
-      date: "Today",
-      people: 2,
-      status: "redeemed",
-      redemption: "confirmed",
-      estimatedDiscount: 14.0,
-    },
-    {
-      id: "bk_002",
-      guestName: "Marc Lefèvre",
-      partnerId: "p_fondue",
-      partner: "Alpine Fondue House",
-      offerId: "off_fondue_20",
-      offerTitle: "20% off fondue · early evening",
-      time: "18:45",
-      date: "Today",
-      people: 4,
-      status: "confirmed",
-      redemption: "pending",
-      estimatedDiscount: 22.4,
-    },
-  ],
-  offers: [
-    {
-      id: "off_fondue_20",
-      partnerId: "p_fondue",
-      partner: "Alpine Fondue House",
-      title: "20% off fondue dishes",
-      discount: 20,
-      validTime: "18:00 – 19:00",
-      excludes: ["drinks"],
-      redemptionType: "single_use",
-      category: "Restaurant",
-      active: true,
-      redemptions: 31,
-      views: 412,
-    },
-    {
-      id: "off_lunch_15",
-      partnerId: "p_fondue",
-      partner: "Alpine Fondue House",
-      title: "15% off lunch menu",
-      discount: 15,
-      validTime: "11:30 – 13:30",
-      redemptionType: "single_use",
-      category: "Restaurant",
-      active: false,
-      redemptions: 8,
-      views: 156,
-    },
-  ],
-  achievements: [
-    {
-      id: "a_film",
-      title: "Alpine Film Explorer",
-      description: "Visit 5 famous alpine film locations",
-      icon: "🎬",
-      progress: 0,
-      total: 5,
-      unlocked: false,
-    },
-    {
-      id: "a_sustain",
-      title: "Sustainable Voyager",
-      description: "5 trips by train, bus or cable car",
-      icon: "🚞",
-      progress: 2,
-      total: 5,
-      unlocked: false,
-    },
-    {
-      id: "a_villages",
-      title: "Village Hopper",
-      description: "Visit 5 villages in the region",
-      icon: "🏘️",
-      progress: 1,
-      total: 5,
-      unlocked: false,
-    },
-  ],
-  tickets: [],
-  scenesCompleted: {},
-};
+const DEFAULT_ACHIEVEMENTS: Achievement[] = [
+  { id: "a_film", title: "Alpine Film Explorer", description: "Visit 5 famous alpine film locations", icon: "🎬", progress: 0, total: 5, unlocked: false },
+  { id: "a_sustain", title: "Sustainable Voyager", description: "5 trips by train, bus or cable car", icon: "🚞", progress: 2, total: 5, unlocked: false },
+  { id: "a_villages", title: "Village Hopper", description: "Visit 5 villages in the region", icon: "🏘️", progress: 1, total: 5, unlocked: false },
+];
+
+function timeAgo(iso: string): string {
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return "Just now";
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function categoryIcon(cat: string): string {
+  switch (cat) {
+    case "Hotel": return "🏨";
+    case "Restaurant": return "🫕";
+    case "Activity": return "🚠";
+    case "Transport": return "🚞";
+    case "Top-up": return "↑";
+    case "Souvenir": return "🎁";
+    default: return "·";
+  }
+}
 
 /* ----------------------------- Context ----------------------------- */
 
 const WalletContext = createContext<(WalletState & WalletActions) | null>(null);
 
 export function WalletProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<WalletState>(initial);
+  const { account } = useAuth();
+  const userId = account?.userId;
+  const isPartner = account?.type === "partner";
 
-  const addTx = useCallback((tx: Transaction) => {
-    setState((s) => ({ ...s, transactions: [tx, ...s.transactions] }));
+  const [balance, setBalance] = useState(0);
+  const [toppedUp, setToppedUp] = useState(0);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [offers, setOffers] = useState<Offer[]>([]);
+  const [achievements, setAchievements] = useState<Achievement[]>(DEFAULT_ACHIEVEMENTS);
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [scenesCompleted, setScenes] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(false);
+  const [partnerId, setPartnerId] = useState<string | undefined>();
+
+  const guestName = account?.name ?? "Guest";
+  const homeCountry = account?.detail ?? "";
+  const guestStatus: "active" | "inactive" =
+    transactions.some((t) => t.category === "Hotel") ? "active" : "inactive";
+
+  /* ---------- Load + subscribe ---------- */
+  useEffect(() => {
+    if (!userId) {
+      setBalance(0); setToppedUp(0);
+      setTransactions([]); setBookings([]); setOffers([]);
+      setAchievements(DEFAULT_ACHIEVEMENTS); setTickets([]); setScenes({});
+      setPartnerId(undefined);
+      return;
+    }
+
+    let cancelled = false;
+    setLoading(true);
+
+    async function load() {
+      // Tourist data: wallet + own transactions + own bookings
+      if (!isPartner) {
+        const [{ data: w }, { data: txs }, { data: bks }, { data: offs }] = await Promise.all([
+          supabase.from("wallets").select("balance, topped_up").eq("user_id", userId).maybeSingle(),
+          supabase.from("transactions").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+          supabase.from("bookings").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
+          supabase.from("offers").select("id, partner_id, title, discount, valid_time, category, active, redemptions, views").eq("active", true),
+        ]);
+        if (cancelled) return;
+        if (w) { setBalance(Number(w.balance)); setToppedUp(Number(w.topped_up)); }
+        setTransactions((txs ?? []).map(mapTx));
+        setBookings((bks ?? []).map(mapBooking));
+        // Load partner names for offers
+        const partnerIds = Array.from(new Set((offs ?? []).map((o) => o.partner_id)));
+        const { data: parts } = partnerIds.length
+          ? await supabase.from("partners").select("id, name").in("id", partnerIds)
+          : { data: [] as { id: string; name: string }[] };
+        const nameMap = new Map((parts ?? []).map((p) => [p.id, p.name]));
+        setOffers((offs ?? []).map((o) => mapOffer(o, nameMap.get(o.partner_id) ?? "Partner")));
+      } else {
+        // Partner data: my partner row + my offers + bookings at my partner
+        const { data: myPartner } = await supabase
+          .from("partners").select("id, name").eq("owner_id", userId).maybeSingle();
+        if (cancelled) return;
+        if (myPartner) {
+          setPartnerId(myPartner.id);
+          const [{ data: offs }, { data: bks }, { data: txs }] = await Promise.all([
+            supabase.from("offers").select("*").eq("partner_id", myPartner.id).order("created_at", { ascending: false }),
+            supabase.from("bookings").select("*").eq("partner_id", myPartner.id).order("created_at", { ascending: false }),
+            supabase.from("transactions").select("*").eq("partner_id", myPartner.id).order("created_at", { ascending: false }),
+          ]);
+          if (cancelled) return;
+          setOffers((offs ?? []).map((o) => mapOffer(o, myPartner.name)));
+          setBookings((bks ?? []).map(mapBooking));
+          setTransactions((txs ?? []).map(mapTx));
+        }
+      }
+      setLoading(false);
+    }
+    load();
+
+    // Realtime
+    const channels = [];
+    if (!isPartner) {
+      const ch = supabase
+        .channel(`wallet-${userId}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "wallets", filter: `user_id=eq.${userId}` }, (p) => {
+          const row = p.new as { balance: number; topped_up: number } | undefined;
+          if (row) { setBalance(Number(row.balance)); setToppedUp(Number(row.topped_up)); }
+        })
+        .on("postgres_changes", { event: "*", schema: "public", table: "transactions", filter: `user_id=eq.${userId}` }, () => load())
+        .on("postgres_changes", { event: "*", schema: "public", table: "bookings", filter: `user_id=eq.${userId}` }, () => load())
+        .subscribe();
+      channels.push(ch);
+    } else {
+      const ch = supabase
+        .channel(`partner-${userId}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, () => load())
+        .on("postgres_changes", { event: "*", schema: "public", table: "offers" }, () => load())
+        .on("postgres_changes", { event: "*", schema: "public", table: "transactions" }, () => load())
+        .subscribe();
+      channels.push(ch);
+    }
+
+    return () => {
+      cancelled = true;
+      channels.forEach((c) => supabase.removeChannel(c));
+    };
+  }, [userId, isPartner]);
+
+  /* ---------- Mappers ---------- */
+  function mapTx(r: any): Transaction {
+    return {
+      id: r.id,
+      partner: r.partner_name,
+      category: r.category,
+      amount: Number(r.amount),
+      discount: r.discount ? Number(r.discount) : undefined,
+      time: timeAgo(r.created_at),
+      icon: r.icon ?? categoryIcon(r.category),
+    };
+  }
+  function mapBooking(r: any): Booking {
+    return {
+      id: r.id,
+      guestName: r.guest_name,
+      partnerId: r.partner_id,
+      partner: r.partner_name,
+      offerId: r.offer_id ?? undefined,
+      offerTitle: r.offer_title ?? undefined,
+      time: r.booking_time,
+      date: r.booking_date,
+      people: r.people,
+      status: r.status,
+      redemption: r.status === "redeemed" ? "confirmed" : "pending",
+      estimatedDiscount: r.estimated_discount ? Number(r.estimated_discount) : undefined,
+    };
+  }
+  function mapOffer(r: any, partnerName: string): Offer {
+    return {
+      id: r.id,
+      partnerId: r.partner_id,
+      partner: partnerName,
+      title: r.title,
+      discount: Number(r.discount),
+      validTime: r.valid_time ?? "",
+      redemptionType: (r.redemption_type ?? "single_use") as "single_use" | "multi_use",
+      category: r.category ?? "Restaurant",
+      active: !!r.active,
+      redemptions: r.redemptions ?? 0,
+      views: r.views ?? 0,
+    };
+  }
+
+  /* ---------- Actions (tourist) ---------- */
+
+  const topUp = useCallback(async (amount: number) => {
+    if (!userId) return;
+    const { error } = await supabase.functions.invoke("wallet-topup", { body: { amount } });
+    if (error) console.error(error);
+    setScenes((s) => ({ ...s, topup: true }));
+  }, [userId]);
+
+  const spend = useCallback(async (args: {
+    partnerId: string | null; partnerName: string;
+    category: Transaction["category"]; amount: number;
+    discount?: number; icon?: string; bookingId?: string;
+  }) => {
+    const { error } = await supabase.rpc("wallet_spend", {
+      p_partner_id: args.partnerId,
+      p_partner_name: args.partnerName,
+      p_category: args.category,
+      p_amount: args.amount,
+      p_discount: args.discount ?? null,
+      p_icon: args.icon ?? null,
+      p_booking_id: args.bookingId ?? null,
+    });
+    if (error) throw error;
   }, []);
 
-  const topUp = useCallback(
-    (amount: number) => {
-      setState((s) => ({
-        ...s,
-        balance: s.balance + amount,
-        toppedUp: s.toppedUp + amount,
-        scenesCompleted: { ...s.scenesCompleted, topup: true },
-      }));
-      addTx({
-        id: `tx_${Date.now()}`,
-        partner: "Top-up · Tourism Kiosk",
-        category: "Top-up",
-        amount,
-        time: "Just now",
-        icon: "↑",
-      });
-    },
-    [addTx]
-  );
-
-  const payHotel = useCallback(() => {
-    const cost = 165;
-    setState((s) => ({
-      ...s,
-      balance: s.balance - cost,
-      guestStatus: "active",
-      guestCardActiveSince: "Today",
-      scenesCompleted: { ...s.scenesCompleted, hotel: true },
-    }));
-    addTx({
-      id: `tx_${Date.now()}`,
-      partner: "Hotel Interlaken Central",
+  const payHotel = useCallback(async () => {
+    await spend({
+      partnerId: null,
+      partnerName: "Hotel Interlaken Central",
       category: "Hotel",
-      amount: -cost,
-      time: "Just now",
+      amount: 165,
       icon: "🏨",
     });
-  }, [addTx]);
+    setScenes((s) => ({ ...s, hotel: true }));
+  }, [spend]);
 
-  const bookFondue = useCallback(() => {
-    setState((s) => ({
-      ...s,
-      bookings: [
-        {
-          id: "bk_hans",
-          guestName: "Hans Keller",
-          partnerId: "p_fondue",
-          partner: "Alpine Fondue House",
-          offerId: "off_fondue_20",
-          offerTitle: "20% off fondue · early evening",
-          time: "18:30",
-          date: "Today",
-          people: 1,
-          status: "confirmed",
-          redemption: "pending",
-          estimatedDiscount: 12.0,
-        },
-        ...s.bookings,
-      ],
-      scenesCompleted: { ...s.scenesCompleted, restaurant: true },
-    }));
-  }, []);
-
-  const redeemFondue = useCallback(() => {
-    const beforeDiscount = 72;
-    const discount = 12;
-    const finalAmount = beforeDiscount - discount;
-
-    setState((s) => ({
-      ...s,
-      balance: s.balance - finalAmount,
-      bookings: s.bookings.map((b) =>
-        b.id === "bk_hans" ? { ...b, status: "redeemed", redemption: "confirmed" } : b
-      ),
-      offers: s.offers.map((o) =>
-        o.id === "off_fondue_20" ? { ...o, redemptions: o.redemptions + 1 } : o
-      ),
-      scenesCompleted: { ...s.scenesCompleted, qr: true },
-    }));
-    addTx({
-      id: `tx_${Date.now()}`,
-      partner: "Alpine Fondue House",
-      category: "Restaurant",
-      amount: -finalAmount,
-      discount,
-      time: "Just now",
-      icon: "🫕",
+  const bookFondue = useCallback(async () => {
+    if (!userId) return;
+    await supabase.from("bookings").insert({
+      user_id: userId,
+      guest_name: guestName,
+      partner_id: ALPINE_FONDUE_PARTNER_ID,
+      partner_name: "Alpine Fondue House",
+      offer_title: "20% off fondue · early evening",
+      booking_time: "18:30",
+      booking_date: "Today",
+      people: 1,
+      estimated_discount: 12.0,
     });
-  }, [addTx]);
+    setScenes((s) => ({ ...s, restaurant: true }));
+  }, [userId, guestName]);
 
-  const bookTripBuilder = useCallback(() => {
-    setState((s) => ({
-      ...s,
-      tickets: [
-        {
-          id: "tk_train",
-          title: "Train · Interlaken Ost → Grindelwald",
-          partner: "BLS",
-          date: "Tomorrow",
-          time: "08:14",
-          qr: "JF-TRN-7714",
-          used: false,
-        },
-        ...s.tickets,
-      ],
-      achievements: s.achievements.map((a) =>
-        a.id === "a_film" ? { ...a, progress: 1 } : a
-      ),
-      scenesCompleted: { ...s.scenesCompleted, trip: true },
-    }));
+  const redeemFondue = useCallback(async () => {
+    const myFondue = bookings.find(
+      (b) => b.partnerId === ALPINE_FONDUE_PARTNER_ID && b.status === "confirmed"
+    );
+    await spend({
+      partnerId: ALPINE_FONDUE_PARTNER_ID,
+      partnerName: "Alpine Fondue House",
+      category: "Restaurant",
+      amount: 60,
+      discount: 12,
+      icon: "🫕",
+      bookingId: myFondue?.id,
+    });
+    setScenes((s) => ({ ...s, qr: true }));
+  }, [bookings, spend]);
+
+  const bookTripBuilder = useCallback(async () => {
+    setTickets((t) => [
+      { id: "tk_train", title: "Train · Interlaken Ost → Grindelwald", partner: "BLS", date: "Tomorrow", time: "08:14", qr: "JF-TRN-7714", used: false },
+      ...t,
+    ]);
+    setAchievements((a) => a.map((x) => x.id === "a_film" ? { ...x, progress: 1 } : x));
+    setScenes((s) => ({ ...s, trip: true }));
   }, []);
 
-  const payEigerExpress = useCallback(() => {
-    const cost = 89;
-    setState((s) => ({
-      ...s,
-      balance: s.balance - cost,
-      tickets: [
-        {
-          id: "tk_eiger",
-          title: "Eiger Express · Round trip",
-          partner: "Jungfrau Railways",
-          date: "Tomorrow",
-          time: "10:30",
-          qr: "JF-EIG-2244",
-          used: false,
-        },
-        ...s.tickets,
-      ],
-      achievements: s.achievements.map((a) =>
-        a.id === "a_film" ? { ...a, progress: 3 } : a
-      ),
-      scenesCompleted: { ...s.scenesCompleted, eiger: true },
-    }));
-    addTx({
-      id: `tx_${Date.now()}`,
-      partner: "Eiger Express · External checkout",
+  const payEigerExpress = useCallback(async () => {
+    await spend({
+      partnerId: null,
+      partnerName: "Eiger Express · External checkout",
       category: "Activity",
-      amount: -cost,
-      time: "Just now",
+      amount: 89,
       icon: "🚠",
     });
-  }, [addTx]);
+    setTickets((t) => [
+      { id: "tk_eiger", title: "Eiger Express · Round trip", partner: "Jungfrau Railways", date: "Tomorrow", time: "10:30", qr: "JF-EIG-2244", used: false },
+      ...t,
+    ]);
+    setAchievements((a) => a.map((x) => x.id === "a_film" ? { ...x, progress: 3 } : x));
+    setScenes((s) => ({ ...s, eiger: true }));
+  }, [spend]);
 
   const unlockReward = useCallback(() => {
-    setState((s) => ({
-      ...s,
-      achievements: s.achievements.map((a) =>
-        a.id === "a_film" ? { ...a, progress: 5, unlocked: true } : a
-      ),
-      scenesCompleted: { ...s.scenesCompleted, reward: true },
-    }));
+    setAchievements((a) => a.map((x) => x.id === "a_film" ? { ...x, progress: 5, unlocked: true } : x));
+    setScenes((s) => ({ ...s, reward: true }));
   }, []);
 
-  const resetDemo = useCallback(() => setState(initial), []);
+  const resetDemo = useCallback(() => {
+    setAchievements(DEFAULT_ACHIEVEMENTS);
+    setTickets([]);
+    setScenes({});
+  }, []);
+
   const markScene = useCallback((scene: string) => {
-    setState((s) => ({ ...s, scenesCompleted: { ...s.scenesCompleted, [scene]: true } }));
+    setScenes((s) => ({ ...s, [scene]: true }));
   }, []);
 
-  const toggleOffer = useCallback((id: string) => {
-    setState((s) => ({
-      ...s,
-      offers: s.offers.map((o) => (o.id === id ? { ...o, active: !o.active } : o)),
-    }));
-  }, []);
+  /* ---------- Actions (partner) ---------- */
 
-  const createOffer: WalletActions["createOffer"] = useCallback((offer) => {
-    setState((s) => ({
-      ...s,
-      offers: [
-        {
-          id: `off_${Date.now()}`,
-          partnerId: "p_fondue",
-          partner: "Alpine Fondue House",
-          active: true,
-          redemptions: 0,
-          views: 0,
-          ...offer,
-        },
-        ...s.offers,
-      ],
-    }));
+  const toggleOffer = useCallback(async (id: string) => {
+    const o = offers.find((x) => x.id === id);
+    if (!o) return;
+    await supabase.from("offers").update({ active: !o.active }).eq("id", id);
+  }, [offers]);
+
+  const createOffer = useCallback(async (offer: {
+    title: string; discount: number; validTime: string; category: string;
+    redemptionType: "single_use" | "multi_use"; excludes?: string[];
+  }) => {
+    if (!partnerId) return;
+    await supabase.from("offers").insert({
+      partner_id: partnerId,
+      title: offer.title,
+      discount: offer.discount,
+      valid_time: offer.validTime,
+      category: offer.category,
+      redemption_type: offer.redemptionType,
+      active: true,
+    });
+  }, [partnerId]);
+
+  const partnerConfirmBooking = useCallback(async (bookingId: string) => {
+    const { data, error } = await supabase.functions.invoke("partner-confirm-booking", {
+      body: { bookingId },
+    });
+    if (error) return { ok: false, error: error.message };
+    if ((data as any)?.error) return { ok: false, error: (data as any).error };
+    return { ok: true };
   }, []);
 
   return (
     <WalletContext.Provider
       value={{
-        ...state,
-        topUp,
-        payHotel,
-        bookFondue,
-        redeemFondue,
-        bookTripBuilder,
-        payEigerExpress,
-        unlockReward,
-        resetDemo,
-        markScene,
-        toggleOffer,
-        createOffer,
+        guestName, guestStatus, homeCountry, balance, toppedUp,
+        transactions, bookings, offers, achievements, tickets,
+        scenesCompleted, loading,
+        topUp, payHotel, bookFondue, redeemFondue, bookTripBuilder,
+        payEigerExpress, unlockReward, resetDemo, markScene,
+        toggleOffer, createOffer, partnerConfirmBooking,
       }}
     >
       {children}
