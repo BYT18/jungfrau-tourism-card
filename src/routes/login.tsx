@@ -35,6 +35,33 @@ function LoginPage() {
 
   const goByType = (t: AccountType) => navigate({ to: t === "tourist" ? "/tourist" : "/partner" });
 
+  const demoSignIn = async (kind: "tourist" | "partner") => {
+    setError(null); setInfo(null); setBusy(true);
+    try {
+      const demoEmail = kind === "tourist" ? "demo.tourist@jungfrau.app" : "demo.partner@jungfrau.app";
+      const demoPassword = "demo1234";
+      const demoName = kind === "tourist" ? "Hans Keller" : "Marco Bianchi";
+
+      // Try sign in first
+      let res = await signIn(demoEmail, demoPassword);
+      if (!res.ok) {
+        // Create the account on the fly
+        if (kind === "tourist") {
+          const up = await signUpTourist({ email: demoEmail, password: demoPassword, name: demoName, country: "Germany" });
+          if (!up.ok) { setError(up.error ?? "Demo signup failed."); return; }
+        } else {
+          const up = await signUpPartner({ email: demoEmail, password: demoPassword, name: demoName, claimAlpine: true });
+          if (!up.ok) { setError(up.error ?? "Demo signup failed."); return; }
+        }
+        res = await signIn(demoEmail, demoPassword);
+        if (!res.ok) { setError(res.error ?? "Could not sign in to demo account."); return; }
+      }
+      goByType(kind);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
