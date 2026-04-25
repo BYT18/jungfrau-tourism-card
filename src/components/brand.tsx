@@ -25,10 +25,9 @@ export function Logo({ className = "" }: { className?: string }) {
 export function TopNav() {
   const { pathname } = useRouterState({ select: (s) => s.location });
   const { resetDemo } = useWallet();
-  const { account, logout } = useAuth();
+  const { account, signOut } = useAuth();
   const navigate = useNavigate();
 
-  // Build nav based on whether user is signed in
   const items = [
     { to: "/", label: "Overview" },
     ...(account?.type === "tourist" ? [{ to: "/tourist", label: "Tourist app" }] : []),
@@ -36,8 +35,8 @@ export function TopNav() {
     { to: "/admin", label: "Destination" },
   ];
 
-  const handleLogout = () => {
-    logout();
+  const handleLogout = async () => {
+    await signOut();
     resetDemo();
     navigate({ to: "/" });
   };
