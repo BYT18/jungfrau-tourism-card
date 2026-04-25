@@ -1,1 +1,10 @@
 project_id = "qdjpvesybqtkzcbacsph"
+
+[functions.wallet-topup]
+verify_jwt = true
+
+[functions.partner-confirm-booking]
+verify_jwt = true
+
+[functions.claim-partner]
+verify_jwt = true
