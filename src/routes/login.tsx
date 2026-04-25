@@ -159,6 +159,34 @@ function LoginPage() {
             </div>
           </div>
 
+          {/* Demo quick sign-in */}
+          <div className="mt-5 rounded-xl border border-dashed border-teal/40 bg-teal/5 p-3">
+            <div className="text-[10px] uppercase tracking-[0.18em] text-teal font-bold mb-2">
+              ⚡ One-click demo
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => demoSignIn("tourist")}
+                disabled={busy}
+                className="px-3 py-2 rounded-md bg-white border border-border text-xs font-semibold text-charcoal hover:border-primary hover:text-primary transition disabled:opacity-60"
+              >
+                🏔️ Demo tourist
+              </button>
+              <button
+                type="button"
+                onClick={() => demoSignIn("partner")}
+                disabled={busy}
+                className="px-3 py-2 rounded-md bg-white border border-border text-xs font-semibold text-charcoal hover:border-primary hover:text-primary transition disabled:opacity-60"
+              >
+                🍽️ Demo partner
+              </button>
+            </div>
+            <p className="mt-2 text-[10px] text-muted-foreground leading-relaxed">
+              Instantly signs you in. Creates the account on first click — no email confirmation needed.
+            </p>
+          </div>
+
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
             {mode === "signup" && (
               <label className="block">
