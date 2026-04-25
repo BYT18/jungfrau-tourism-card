@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageShell, SectionTitle, Stat } from "@/components/brand";
+import { RequireAuth } from "@/components/require-auth";
 import { Toast, useToast, QRBlock } from "@/components/wallet-ui";
 import { useWallet, fmtCHF } from "@/lib/wallet-store";
+import { useAuth } from "@/lib/auth-store";
 import fondueImg from "@/assets/fondue.jpg";
 
 export const Route = createFileRoute("/partner")({
@@ -22,7 +24,11 @@ export const Route = createFileRoute("/partner")({
       },
     ],
   }),
-  component: PartnerDashboard,
+  component: () => (
+    <RequireAuth type="partner">
+      <PartnerDashboard />
+    </RequireAuth>
+  ),
 });
 
 type Tab = "overview" | "offers" | "bookings" | "scan" | "settle";
@@ -30,23 +36,26 @@ type Tab = "overview" | "offers" | "bookings" | "scan" | "settle";
 function PartnerDashboard() {
   const [tab, setTab] = useState<Tab>("overview");
   const { msg, show } = useToast();
+  const { account } = useAuth();
 
   return (
     <PageShell>
       <section className="mx-auto max-w-7xl px-6 pt-12 pb-20">
         <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-6">
           <SectionTitle
-            eyebrow="Demo · Partner"
+            eyebrow="Partner workspace"
             title="Alpine Fondue House dashboard"
             description="Create targeted offers, receive bookings from the wallet, validate guest eligibility with one scan."
           />
           <div className="flex items-center gap-3">
             <div className="text-right">
               <div className="text-xs text-muted-foreground">Signed in as</div>
-              <div className="text-sm font-semibold text-charcoal">Marco · Manager</div>
+              <div className="text-sm font-semibold text-charcoal">
+                {account?.name ?? "Marco · Manager"}
+              </div>
             </div>
             <div className="w-10 h-10 rounded-full bg-charcoal text-white grid place-items-center font-semibold">
-              MA
+              {account?.initials ?? "MA"}
             </div>
           </div>
         </div>

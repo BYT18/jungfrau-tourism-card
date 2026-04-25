@@ -1,6 +1,7 @@
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { useWallet } from "@/lib/wallet-store";
+import { useAuth } from "@/lib/auth-store";
 
 export function Logo({ className = "" }: { className?: string }) {
   return (
@@ -24,16 +25,26 @@ export function Logo({ className = "" }: { className?: string }) {
 export function TopNav() {
   const { pathname } = useRouterState({ select: (s) => s.location });
   const { resetDemo } = useWallet();
+  const { account, logout } = useAuth();
+  const navigate = useNavigate();
+
+  // Build nav based on whether user is signed in
   const items = [
     { to: "/", label: "Overview" },
-    { to: "/tourist", label: "Tourist app" },
-    { to: "/partner", label: "Partner" },
+    ...(account?.type === "tourist" ? [{ to: "/tourist", label: "Tourist app" }] : []),
+    ...(account?.type === "partner" ? [{ to: "/partner", label: "Partner" }] : []),
     { to: "/admin", label: "Destination" },
-    { to: "/architecture", label: "Architecture" },
   ];
+
+  const handleLogout = () => {
+    logout();
+    resetDemo();
+    navigate({ to: "/" });
+  };
+
   return (
     <header className="sticky top-0 z-40 backdrop-blur-md bg-background/85 border-b border-border">
-      <div className="mx-auto max-w-7xl px-6 h-16 flex items-center justify-between">
+      <div className="mx-auto max-w-7xl px-6 h-16 flex items-center justify-between gap-4">
         <Logo />
         <nav className="hidden md:flex items-center gap-1">
           {items.map((i) => {
@@ -53,16 +64,34 @@ export function TopNav() {
             );
           })}
         </nav>
-        <button
-          onClick={resetDemo}
-          className="text-xs text-muted-foreground hover:text-charcoal flex items-center gap-1.5"
-          aria-label="Reset demo"
-        >
-          <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M21 12a9 9 0 11-3.5-7.1M21 4v5h-5" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          Reset demo
-        </button>
+        <div className="flex items-center gap-3">
+          {account ? (
+            <div className="flex items-center gap-2.5">
+              <div className="hidden sm:block text-right leading-tight">
+                <div className="text-xs font-semibold text-charcoal">{account.name}</div>
+                <div className="text-[10px] text-muted-foreground capitalize">
+                  {account.type} account
+                </div>
+              </div>
+              <div className="w-9 h-9 rounded-full bg-charcoal text-white grid place-items-center font-semibold text-xs">
+                {account.initials}
+              </div>
+              <button
+                onClick={handleLogout}
+                className="text-xs text-muted-foreground hover:text-charcoal px-2 py-1 rounded-md hover:bg-surface-2"
+              >
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <Link
+              to="/login"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-semibold shadow-soft hover:bg-primary/90 transition-colors"
+            >
+              Sign in
+            </Link>
+          )}
+        </div>
       </div>
     </header>
   );

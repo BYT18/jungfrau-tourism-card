@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { PageShell, SectionTitle, Stat } from "@/components/brand";
 import { WalletCard } from "@/components/wallet-ui";
+import { useAuth } from "@/lib/auth-store";
 import heroImg from "@/assets/jungfrau-hero.jpg";
 import interlakenImg from "@/assets/interlaken.jpg";
 
@@ -26,6 +27,9 @@ export const Route = createFileRoute("/")({
 });
 
 function Home() {
+  const { account } = useAuth();
+  const touristHref = account?.type === "tourist" ? "/tourist" : "/login";
+  const partnerHref = account?.type === "partner" ? "/partner" : "/login";
   return (
     <PageShell>
       {/* HERO */}
@@ -57,16 +61,16 @@ function Home() {
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link
-                to="/tourist"
+                to={touristHref}
                 className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-primary text-primary-foreground font-semibold shadow-card hover:bg-primary/90 transition-colors"
               >
-                Try Hans's journey →
+                {account?.type === "tourist" ? "Open my wallet →" : "Sign in as tourist →"}
               </Link>
               <Link
-                to="/partner"
+                to={partnerHref}
                 className="inline-flex items-center gap-2 px-5 py-3 rounded-lg bg-white border border-border text-charcoal font-semibold hover:bg-surface-2 transition-colors"
               >
-                Partner dashboard
+                {account?.type === "partner" ? "Open partner dashboard" : "Sign in as partner"}
               </Link>
               <Link
                 to="/admin"
@@ -182,19 +186,19 @@ function Home() {
         <div className="mt-10 grid md:grid-cols-3 gap-6">
           {[
             {
-              to: "/tourist",
+              to: touristHref,
               tag: "Tourist",
               title: "Hans Keller",
               desc: "Spontaneous traveler discovers the region, tops up CHF 1,000, gets his digital guest card and books his trip — all from one app.",
-              cta: "Open tourist app",
+              cta: account?.type === "tourist" ? "Open tourist app" : "Sign in as tourist",
               accent: "from-primary to-teal",
             },
             {
-              to: "/partner",
+              to: partnerHref,
               tag: "Partner",
               title: "Alpine Fondue House",
               desc: "Restaurant fills its 18:00–19:00 quiet hour with a targeted offer, scans guest QR, validates eligibility automatically.",
-              cta: "Open partner dashboard",
+              cta: account?.type === "partner" ? "Open partner dashboard" : "Sign in as partner",
               accent: "from-teal to-emerald",
             },
             {

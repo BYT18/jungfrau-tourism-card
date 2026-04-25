@@ -1,5 +1,6 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { WalletProvider } from "@/lib/wallet-store";
+import { AuthProvider } from "@/lib/auth-store";
 
 import appCss from "../styles.css?url";
 
@@ -83,8 +84,10 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   return (
-    <WalletProvider>
-      <Outlet />
-    </WalletProvider>
+    <AuthProvider>
+      <WalletProvider>
+        <Outlet />
+      </WalletProvider>
+    </AuthProvider>
   );
 }

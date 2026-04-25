@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { PageShell, SectionTitle } from "@/components/brand";
+import { RequireAuth } from "@/components/require-auth";
 import {
   PhoneFrame,
   WalletCard,
@@ -32,7 +33,11 @@ export const Route = createFileRoute("/tourist")({
       },
     ],
   }),
-  component: TouristApp,
+  component: () => (
+    <RequireAuth type="tourist">
+      <TouristApp />
+    </RequireAuth>
+  ),
 });
 
 type Screen =
