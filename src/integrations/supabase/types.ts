@@ -14,16 +14,300 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      bookings: {
+        Row: {
+          booking_date: string
+          booking_time: string
+          created_at: string
+          estimated_discount: number | null
+          guest_name: string
+          id: string
+          offer_id: string | null
+          offer_title: string | null
+          partner_id: string
+          partner_name: string
+          people: number
+          status: Database["public"]["Enums"]["booking_status"]
+          user_id: string
+        }
+        Insert: {
+          booking_date: string
+          booking_time: string
+          created_at?: string
+          estimated_discount?: number | null
+          guest_name: string
+          id?: string
+          offer_id?: string | null
+          offer_title?: string | null
+          partner_id: string
+          partner_name: string
+          people?: number
+          status?: Database["public"]["Enums"]["booking_status"]
+          user_id: string
+        }
+        Update: {
+          booking_date?: string
+          booking_time?: string
+          created_at?: string
+          estimated_discount?: number | null
+          guest_name?: string
+          id?: string
+          offer_id?: string | null
+          offer_title?: string | null
+          partner_id?: string
+          partner_name?: string
+          people?: number
+          status?: Database["public"]["Enums"]["booking_status"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bookings_offer_id_fkey"
+            columns: ["offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bookings_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      offers: {
+        Row: {
+          active: boolean
+          category: string | null
+          created_at: string
+          discount: number
+          id: string
+          partner_id: string
+          redemption_type: string
+          redemptions: number
+          title: string
+          valid_time: string | null
+          views: number
+        }
+        Insert: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          discount: number
+          id?: string
+          partner_id: string
+          redemption_type?: string
+          redemptions?: number
+          title: string
+          valid_time?: string | null
+          views?: number
+        }
+        Update: {
+          active?: boolean
+          category?: string | null
+          created_at?: string
+          discount?: number
+          id?: string
+          partner_id?: string
+          redemption_type?: string
+          redemptions?: number
+          title?: string
+          valid_time?: string | null
+          views?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offers_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      partners: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          location: string | null
+          name: string
+          owner_id: string | null
+        }
+        Insert: {
+          category: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          location?: string | null
+          name: string
+          owner_id?: string | null
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          location?: string | null
+          name?: string
+          owner_id?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string
+          home_country: string | null
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          home_country?: string | null
+          id: string
+          role?: Database["public"]["Enums"]["app_role"]
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          home_country?: string | null
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+        }
+        Relationships: []
+      }
+      transactions: {
+        Row: {
+          amount: number
+          category: Database["public"]["Enums"]["tx_category"]
+          created_at: string
+          discount: number | null
+          icon: string | null
+          id: string
+          partner_id: string | null
+          partner_name: string
+          user_id: string
+          wallet_id: string
+        }
+        Insert: {
+          amount: number
+          category: Database["public"]["Enums"]["tx_category"]
+          created_at?: string
+          discount?: number | null
+          icon?: string | null
+          id?: string
+          partner_id?: string | null
+          partner_name: string
+          user_id: string
+          wallet_id: string
+        }
+        Update: {
+          amount?: number
+          category?: Database["public"]["Enums"]["tx_category"]
+          created_at?: string
+          discount?: number | null
+          icon?: string | null
+          id?: string
+          partner_id?: string | null
+          partner_name?: string
+          user_id?: string
+          wallet_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transactions_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "partners"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transactions_wallet_id_fkey"
+            columns: ["wallet_id"]
+            isOneToOne: false
+            referencedRelation: "wallets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wallets: {
+        Row: {
+          balance: number
+          created_at: string
+          id: string
+          topped_up: number
+          user_id: string
+        }
+        Insert: {
+          balance?: number
+          created_at?: string
+          id?: string
+          topped_up?: number
+          user_id: string
+        }
+        Update: {
+          balance?: number
+          created_at?: string
+          id?: string
+          topped_up?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      current_role: {
+        Args: never
+        Returns: Database["public"]["Enums"]["app_role"]
+      }
+      wallet_spend: {
+        Args: {
+          p_amount: number
+          p_booking_id?: string
+          p_category: Database["public"]["Enums"]["tx_category"]
+          p_discount?: number
+          p_icon?: string
+          p_partner_id: string
+          p_partner_name: string
+        }
+        Returns: {
+          amount: number
+          category: Database["public"]["Enums"]["tx_category"]
+          created_at: string
+          discount: number | null
+          icon: string | null
+          id: string
+          partner_id: string | null
+          partner_name: string
+          user_id: string
+          wallet_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "transactions"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "tourist" | "partner"
+      booking_status: "confirmed" | "redeemed" | "cancelled"
+      tx_category:
+        | "Hotel"
+        | "Restaurant"
+        | "Activity"
+        | "Transport"
+        | "Top-up"
+        | "Souvenir"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +434,17 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["tourist", "partner"],
+      booking_status: ["confirmed", "redeemed", "cancelled"],
+      tx_category: [
+        "Hotel",
+        "Restaurant",
+        "Activity",
+        "Transport",
+        "Top-up",
+        "Souvenir",
+      ],
+    },
   },
 } as const
